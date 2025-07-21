@@ -17,10 +17,8 @@ class OpenAIClient:
         self.client = openai.OpenAI(api_key=api_key)
     
     async def generate_response(
-        self, 
-        prompt: str, 
-        max_tokens: int = 256, 
-        temperature: float = 0.7,
+        self,
+        prompt: str,
         model: str = "gpt-4o-mini"
     ) -> str:
         """
@@ -28,8 +26,6 @@ class OpenAIClient:
         
         Args:
             prompt: The prompt to send to OpenAI
-            max_tokens: Maximum tokens in response
-            temperature: Response creativity (0-1)
             model: OpenAI model to use (default: gpt-4o-mini for cost efficiency)
             
         Returns:
@@ -44,9 +40,7 @@ class OpenAIClient:
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": prompt}
-                ],
-                max_tokens=max_tokens,
-                temperature=temperature
+                ]
             )
             return response.choices[0].message.content
         except Exception as e:

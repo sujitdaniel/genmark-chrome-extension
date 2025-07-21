@@ -1,1 +1,69 @@
  
+{
+  "manifest_version": 3,
+  "name": "LinkedIn Social Assistant",
+  "version": "1.0.0",
+  "description": "AI-powered LinkedIn productivity tools: profile analyzer, feed classifier, and comment assistant.",
+  "permissions": [
+    "scripting",
+    "activeTab",
+    "storage",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "*://www.linkedin.com/*",
+    "http://localhost:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup/index.html",
+    "default_title": "LinkedIn Social Assistant"
+  },
+  "side_panel": {
+    "default_path": "sidepanel/index.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://www.linkedin.com/in/*",
+        "*://www.linkedin.com/company/*"
+      ],
+      "js": [
+        "content/profile.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://www.linkedin.com/feed/*"
+      ],
+      "js": [
+        "content/feed.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "*://www.linkedin.com/posts/*",
+        "*://www.linkedin.com/feed/update/*"
+      ],
+      "js": [
+        "content/post.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/*",
+        "content/*.css"
+      ],
+      "matches": [
+        "*://www.linkedin.com/*"
+      ]
+    }
+  ]
+}
