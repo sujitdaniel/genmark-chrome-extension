@@ -2,6 +2,7 @@ from fastapi import APIRouter, HTTPException
 from ..schemas.models import ProfileData
 from ..services.openai_client import get_openai_client
 from typing import List
+import json
 
 router = APIRouter()
 
@@ -21,42 +22,49 @@ async def analyze_profile(data: ProfileData) -> dict:
     """
     try:
         client = get_openai_client()
-        
-        # Compose prompt for GPT-4o-mini
+
+        # Refined prompt to enforce clean JSON response
         prompt = f"""
-You are a LinkedIn profile expert. Analyze the following profile data and provide 3 actionable improvement suggestions:
+You are a LinkedIn profile expert. Analyze the following profile data and provide exactly 3 actionable improvement suggestions.
 
 Banner present: {data.banner_present}
 Headline: {data.headline}
 About: {data.about}
 Services: {data.services}
 
-Respond with a JSON array of suggestions. Each suggestion should be a string.
-Example format: ["Suggestion 1", "Suggestion 2", "Suggestion 3"]
+Respond ONLY with a valid JSON array of 3 strings like:
+["Suggestion 1", "Suggestion 2", "Suggestion 3"]
+Do NOT include any markdown, explanation, or formatting outside the array.
 """
 
         # Generate response using centralized client
         response_text = await client.generate_response(prompt)
-        
-        # Parse JSON response
-        suggestions = client.parse_json_response(response_text)
-        
-        # Fallback if JSON parsing fails
+
+        # Attempt to parse JSON directly
+        try:
+            suggestions = json.loads(response_text)
+        except json.JSONDecodeError:
+            # Strip markdown block indicators if present
+            cleaned = response_text.replace("```json", "").replace("```", "").strip()
+            try:
+                suggestions = json.loads(cleaned)
+            except json.JSONDecodeError:
+                # Last-resort fallback: split by lines
+                suggestions = [
+                    line.strip('- ').strip()
+                    for line in cleaned.split('\n')
+                    if line.strip() and not line.strip().startswith('[') and not line.strip().startswith(']')
+                ][:3]
+
         if not suggestions or not isinstance(suggestions, list):
-            # Split by lines and clean up
-            suggestions = [
-                line.strip('- ').strip() 
-                for line in response_text.split('\n') 
-                if line.strip() and not line.strip().startswith('[') and not line.strip().startswith(']')
-            ][:3]  # Limit to 3 suggestions
-        
+            raise ValueError("Invalid suggestion format returned from model")
+
         return {"suggestions": suggestions}
-        
+
     except HTTPException:
-        # Re-raise HTTP exceptions (like API key missing)
         raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=f"Profile analysis failed: {str(e)}"
-        ) 
+        )

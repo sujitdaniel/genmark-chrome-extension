@@ -40,6 +40,14 @@ Ensure each comment object has 'type' and 'text' fields.
         
         # Generate response using centralized client
         response_text = await client.generate_response(prompt)
+        # Remove Markdown code block if present
+        response_text = response_text.strip()
+        if response_text.startswith('```json'):
+            response_text = response_text[len('```json'):].strip()
+        if response_text.startswith('```'):
+            response_text = response_text[len('```'):].strip()
+        if response_text.endswith('```'):
+            response_text = response_text[:-len('```')].strip()
         
         # Parse JSON response
         comments = client.parse_json_response(response_text)
