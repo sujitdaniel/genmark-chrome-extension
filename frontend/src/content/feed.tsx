@@ -20,7 +20,7 @@ interface ApiError {
 }
 
 // Configuration constants
-const BACKEND_URL = 'http://localhost:5000/classify-post';
+const BACKEND_URL = 'http://127.0.0.1:8000/classify-post';
 const OVERLAY_STYLE: React.CSSProperties = {
   position: 'absolute',
   right: '12px',

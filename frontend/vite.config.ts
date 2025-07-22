@@ -8,7 +8,7 @@ export default defineConfig({
     viteStaticCopy({
       targets: [
         {
-          src: 'src/manifest.json',
+          src: 'public/manifest.json',
           dest: '.',
         },
         {
@@ -30,7 +30,12 @@ export default defineConfig({
         background: 'background.js',
       },
       output: {
-        entryFileNames: 'assets/[name].js',
+        entryFileNames: (chunkInfo) => {
+          if (chunkInfo.name === 'background') return '[name].js';
+          if (chunkInfo.name === 'popup') return 'popup.html';
+          if (chunkInfo.name === 'sidepanel') return 'sidepanel.html';
+          return 'assets/[name].js';
+        },
         chunkFileNames: 'assets/[name].js',
         assetFileNames: 'assets/[name].[ext]',
       },

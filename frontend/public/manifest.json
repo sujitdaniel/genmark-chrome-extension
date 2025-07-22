@@ -12,17 +12,17 @@
   ],
   "host_permissions": [
     "*://www.linkedin.com/*",
-    "http://localhost:8000/*"
+    "http://127.0.0.1:8000/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_popup": "popup/index.html",
+    "default_popup": "popup.html",
     "default_title": "LinkedIn Social Assistant"
   },
   "side_panel": {
-    "default_path": "sidepanel/index.html"
+    "default_path": "sidepanel.html"
   },
   "content_scripts": [
     {
@@ -31,7 +31,7 @@
         "*://www.linkedin.com/company/*"
       ],
       "js": [
-        "content/profile.js"
+        "assets/profile.js"
       ],
       "run_at": "document_idle"
     },
@@ -40,7 +40,7 @@
         "*://www.linkedin.com/feed/*"
       ],
       "js": [
-        "content/feed.js"
+        "assets/feed.js"
       ],
       "run_at": "document_idle"
     },
@@ -50,7 +50,7 @@
         "*://www.linkedin.com/feed/update/*"
       ],
       "js": [
-        "content/post.js"
+        "assets/post.js"
       ],
       "run_at": "document_idle"
     }

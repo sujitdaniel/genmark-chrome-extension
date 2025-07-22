@@ -19,7 +19,9 @@ class OpenAIClient:
     async def generate_response(
         self,
         prompt: str,
-        model: str = "gpt-4o-mini"
+        model: str = "gpt-4o-mini",
+        max_tokens: int = 256,
+        temperature: float = 0.7
     ) -> str:
         """
         Generate a response from OpenAI API with error handling
@@ -27,6 +29,8 @@ class OpenAIClient:
         Args:
             prompt: The prompt to send to OpenAI
             model: OpenAI model to use (default: gpt-4o-mini for cost efficiency)
+            max_tokens: Maximum number of tokens in the response (default: 256)
+            temperature: Sampling temperature (default: 0.7)
             
         Returns:
             Generated response text
@@ -40,7 +44,9 @@ class OpenAIClient:
                 messages=[
                     {"role": "system", "content": "You are a helpful assistant."},
                     {"role": "user", "content": prompt}
-                ]
+                ],
+                max_tokens=max_tokens,
+                temperature=temperature
             )
             return response.choices[0].message.content
         except Exception as e:

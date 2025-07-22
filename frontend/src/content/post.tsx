@@ -19,7 +19,7 @@ interface ApiError {
 }
 
 // Configuration constants
-const BACKEND_URL = 'http://localhost:5000/generate-comments';
+const BACKEND_URL = 'http://127.0.0.1:8000/generate-comments';
 const PANEL_STYLE: React.CSSProperties = {
   background: '#f8fafc',
   border: '1px solid #e2e8f0',
