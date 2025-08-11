@@ -1,45 +1,38 @@
-import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import { viteStaticCopy } from 'vite-plugin-static-copy';
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import { resolve } from 'path'
 
+// https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [
-    react(),
-    viteStaticCopy({
-      targets: [
-        {
-          src: 'public/manifest.json',
-          dest: '.',
-        },
-        {
-          src: 'src/assets',
-          dest: '.',
-        },
-      ],
-    }),
-  ],
+  plugins: [react()],
   build: {
-    outDir: 'dist',
     rollupOptions: {
       input: {
-        profile: 'src/content/profile.tsx',
-        feed: 'src/content/feed.tsx',
-        post: 'src/content/post.tsx',
-        popup: 'src/popup/index.html',
-        sidepanel: 'src/sidepanel/index.html',
-        background: 'background.js',
+        main: resolve(__dirname, 'index.html'),
+        popup: resolve(__dirname, 'src/popup/index.html'),
+        sidepanel: resolve(__dirname, 'src/sidepanel/index.html'),
+        // Content scripts
+        profile: resolve(__dirname, 'src/content/profile.tsx'),
+        feed: resolve(__dirname, 'src/content/feed.tsx'),
+        post: resolve(__dirname, 'src/content/post.tsx'),
       },
       output: {
         entryFileNames: (chunkInfo) => {
-          if (chunkInfo.name === 'background') return '[name].js';
-          if (chunkInfo.name === 'popup') return 'popup.html';
-          if (chunkInfo.name === 'sidepanel') return 'sidepanel.html';
-          return 'assets/[name].js';
+          if (chunkInfo.name === 'profile') return 'assets/profile.js'
+          if (chunkInfo.name === 'feed') return 'assets/feed.js'
+          if (chunkInfo.name === 'post') return 'assets/post.js'
+          return 'assets/[name]-[hash].js'
         },
-        chunkFileNames: 'assets/[name].js',
-        assetFileNames: 'assets/[name].[ext]',
-      },
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]'
+      }
     },
-    emptyOutDir: true,
+    outDir: 'dist',
+    emptyOutDir: true
   },
-});
+  resolve: {
+    alias: {
+      '@': resolve(__dirname, 'src')
+    }
+  }
+})

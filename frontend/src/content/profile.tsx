@@ -2,7 +2,7 @@
 // This script injects a toggle button and sidebar panel for AI-powered profile suggestions
 // Handles SPA navigation, DOM readiness, and robust selectors
 
-const BACKEND_URL = 'http://127.0.0.1:8000/analyze-profile';
+const BACKEND_URL = 'http://localhost:8000/analyze-profile';
 const PANEL_ID = 'linkedin-assistant-profile-panel';
 const TOGGLE_ID = 'linkedin-assistant-profile-toggle';
 
@@ -392,7 +392,7 @@ class LinkedInProfileAnalyzer {
         troubleshooting = 'The server might be busy. Please try again.';
       } else if (err.message?.includes('fetch')) {
         errorMessage = 'Cannot connect to backend';
-        troubleshooting = 'Make sure the backend server is running at http://127.0.0.1:8000';
+        troubleshooting = 'Make sure the backend server is running at http://localhost:8080';
       } else {
         errorMessage = err.message || err.toString();
       }

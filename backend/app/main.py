@@ -20,6 +20,7 @@ app = FastAPI(
 ALLOWED_ORIGINS = [
     "http://localhost:5173",  # Vite dev server
     "http://localhost:3000",  # Alternative dev port
+    "http://localhost:8000",  # Backend port
     "chrome-extension://*",   # Chrome extensions
     "*"  # Remove this in production
 ]

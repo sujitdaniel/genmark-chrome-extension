@@ -1,98 +1,134 @@
 from fastapi import APIRouter, HTTPException
 from ..schemas.models import CommentRequest
 from ..services.openai_client import get_openai_client
-from typing import List, Dict, Any
+from typing import List, Dict
+import math
 
 router = APIRouter()
+
+def _dedupe_keep_order(items: List[str], min_ratio: float = 0.9) -> List[str]:
+    """Remove near-duplicates by simple normalized containment / Jaccard-ish heuristic."""
+    out: List[str] = []
+    seen: List[str] = []
+    for t in items:
+        cand = " ".join(t.lower().split())
+        if not cand:
+            continue
+        is_dup = False
+        for s in seen:
+            # containment or high overlap → consider duplicate
+            if cand in s or s in cand:
+                is_dup = True
+                break
+            a, b = set(cand.split()), set(s.split())
+            if a and b:
+                overlap = len(a & b) / float(len(a | b))
+                if overlap >= min_ratio:
+                    is_dup = True
+                    break
+        if not is_dup:
+            out.append(t)
+            seen.append(cand)
+    return out
+
+def _fallback_for(slot: str) -> str:
+    if slot == "insight":
+        return "One practical extension is piloting this approach with a small team to validate assumptions before scaling."
+    if slot == "question":
+        return "How did you weigh the trade-offs here—speed to value vs. long-term maintainability?"
+    return "We’ve seen this work well when teams define one success metric upfront. Curious which metric you’d prioritize?"
 
 @router.post('/generate-comments')
 async def generate_comments(data: CommentRequest) -> Dict[str, List[Dict[str, str]]]:
     """
-    Generate AI-powered comment suggestions for LinkedIn posts
-    
-    Args:
-        data: CommentRequest containing post_text and author
-        
-    Returns:
-        dict: JSON object with "comments" array containing type and text
-        
-    Raises:
-        HTTPException: If OpenAI API fails, configuration is invalid, or post_text is missing
+    Generate AI-powered comment suggestions for LinkedIn posts.
     """
-    # Validate required fields
     if not data.post_text or not data.post_text.strip():
-        raise HTTPException(
-            status_code=400, 
-            detail="post_text is required and cannot be empty"
-        )
-    
-    try:
-        client = get_openai_client()
-        
-        prompt = f"""
-You are a professional LinkedIn engagement coach. Given the following LinkedIn post content, generate 3 comments: 1) an insightful contribution, 2) a thought-provoking question, and 3) a hybrid comment that adds value and invites discussion. Respond with only a JSON array of objects like: [{{type: 'insight', text: '...'}}, ...]
+        raise HTTPException(status_code=400, detail="post_text is required and cannot be empty")
 
-Post: {data.post_text}
-Author: {data.author}
+    client = get_openai_client()
 
-Ensure each comment object has 'type' and 'text' fields.
+    # Optional knobs (backward compatible): tone/length from author field or future schema
+    tone = "professional"
+    length = "short"
+    author = data.author or ""
+
+    # Stronger prompt with explicit schema
+    prompt = f"""
+Return ONLY valid JSON matching this schema, no prose:
+{{
+  "comments":[
+    {{"type":"insight","text":"string"}},
+    {{"type":"question","text":"string"}},
+    {{"type":"combo","text":"string"}}
+  ]
+}}
+
+Rules:
+- Audience: LinkedIn professionals.
+- Tone: {tone}. Length: {length}.
+- No emojis unless present in the post. Avoid clichés and generic praise.
+- Be specific to the post. Don't fabricate facts beyond the text.
+- The "question" must invite a concrete, forward-moving reply.
+
+Post:
+\"\"\"{data.post_text.strip()[:4000]}\"\"\"
+Author: {author}
 """
-        
-        # Generate response using centralized client
-        response_text = await client.generate_response(prompt)
-        # Remove Markdown code block if present
-        response_text = response_text.strip()
-        if response_text.startswith('```json'):
-            response_text = response_text[len('```json'):].strip()
-        if response_text.startswith('```'):
-            response_text = response_text[len('```'):].strip()
-        if response_text.endswith('```'):
-            response_text = response_text[:-len('```')].strip()
-        
-        # Parse JSON response
-        comments = client.parse_json_response(response_text)
-        
-        # Validate and provide fallback if parsing fails
-        if not comments or not isinstance(comments, list):
-            # Fallback: try to parse as list of dicts from lines
-            comments = []
-            for line in response_text.split('\n'):
-                if line.strip() and not line.strip().startswith('[') and not line.strip().startswith(']'):
-                    comments.append({
-                        "type": "suggestion", 
-                        "text": line.strip('- ').strip()
-                    })
-        
-        # Ensure we have exactly 3 comments with proper structure
-        valid_comments = []
-        comment_types = ["insight", "question", "combo"]
-        
-        for i, comment in enumerate(comments[:3]):
-            if isinstance(comment, dict) and "text" in comment:
-                valid_comments.append({
-                    "type": comment.get("type", comment_types[i] if i < len(comment_types) else "suggestion"),
-                    "text": comment["text"]
-                })
-            elif isinstance(comment, str):
-                valid_comments.append({
-                    "type": comment_types[i] if i < len(comment_types) else "suggestion",
-                    "text": comment
-                })
-        
-        # Pad with default comments if needed
-        while len(valid_comments) < 3:
-            valid_comments.append({
-                "type": "suggestion",
-                "text": "Great post! Thanks for sharing."
-            })
-        
-        return {"comments": valid_comments}
-        
+
+    try:
+        response_text = await client.generate_response(prompt, max_tokens=320, temperature=0.7)
+        parsed = client.parse_json_response(response_text) or {}
+
+        raw_comments = parsed.get("comments", parsed if isinstance(parsed, list) else [])
+        # normalize to list of dicts
+        normalized: List[Dict[str, str]] = []
+        want_order = ["insight", "question", "combo"]
+
+        # Accept both array-of-dicts or loose array
+        for i, want in enumerate(want_order):
+            # try to find object with that type
+            obj = None
+            if isinstance(raw_comments, list):
+                obj = next((c for c in raw_comments if isinstance(c, dict) and c.get("type") == want), None)
+                if not obj and i < len(raw_comments) and isinstance(raw_comments[i], dict):
+                    obj = raw_comments[i]
+            elif isinstance(raw_comments, dict) and "type" in raw_comments and "text" in raw_comments:
+                obj = raw_comments
+
+            text = (obj or {}).get("text", "").strip() if obj else ""
+            if not text:
+                text = _fallback_for(want)
+            normalized.append({"type": want, "text": text})
+
+        # light dedupe
+        texts = [c["text"] for c in normalized]
+        unique_texts = _dedupe_keep_order(texts)
+        # If dedupe dropped something, re-fill with distinct fallbacks
+        if len(unique_texts) < 3:
+            for t in ["insight", "question", "combo"]:
+                if len(unique_texts) >= 3:
+                    break
+                fb = _fallback_for(t)
+                if fb not in unique_texts:
+                    unique_texts.append(fb)
+        # Ensure we have exactly 3 comments
+        while len(unique_texts) < 3:
+            for t in ["insight", "question", "combo"]:
+                if len(unique_texts) >= 3:
+                    break
+                fb = _fallback_for(t)
+                if fb not in unique_texts:
+                    unique_texts.append(fb)
+                    break
+        # Update normalized comments with deduplicated texts
+        for i, t in enumerate(unique_texts[:3]):
+            if i < len(normalized):
+                normalized[i]["text"] = t
+
+        return {"comments": normalized}
+
     except HTTPException:
-        # Re-raise HTTP exceptions (like API key missing)
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Comment generation failed: {str(e)}"
-        ) 
+        raise HTTPException(status_code=500, detail=f"Comment generation failed: {str(e)}")

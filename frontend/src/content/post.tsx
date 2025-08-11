@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 
+console.log('[LSA] post.tsx loaded', location.href);
+
 // Types for better TypeScript support
 
 
@@ -19,7 +21,7 @@ interface ApiError {
 }
 
 // Configuration constants
-const BACKEND_URL = 'http://127.0.0.1:8000/generate-comments';
+const BACKEND_URL = 'http://localhost:8000/generate-comments';
 const PANEL_STYLE: React.CSSProperties = {
   background: '#f8fafc',
   border: '1px solid #e2e8f0',
@@ -70,7 +72,8 @@ const errorStyle: React.CSSProperties = {
 
 // Utility: Check if on LinkedIn post page
 function isPostPage(): boolean {
-  return /linkedin.com\/feed\/update\/urn:li:activity:/.test(window.location.href);
+  const p = location.pathname;
+  return p.startsWith("/feed/update/") || p.startsWith("/posts/");
 }
 
 // Utility: Extract main post data with robust selectors
@@ -93,7 +96,9 @@ function extractMainPost(): { post: HTMLElement; postText: string; author: strin
     '.break-words',
     '.feed-shared-text',
     '.feed-shared-update-v2__commentary',
-    '.feed-shared-update-v2__content'
+    '.feed-shared-update-v2__content',
+    '[data-test-id="main-feed-activity-card"] [dir="ltr"]', // sometimes the text lives here
+    'div[data-urn][data-test-id] [dir="ltr"]'
   ];
   
   let postText = '';
@@ -139,13 +144,15 @@ function CommentSuggestions({
   loading, 
   error, 
   onCopy, 
-  onInsert 
+  onInsert,
+  onRegenerate
 }: { 
   comments: CommentObj[];
   loading: boolean;
   error?: string;
   onCopy: (text: string) => void;
   onInsert: (text: string) => void;
+  onRegenerate: () => void;
 }) {
   return (
     <div 
@@ -154,10 +161,22 @@ function CommentSuggestions({
       role="complementary"
       aria-label="AI Comment Suggestions"
     >
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>
-        💡 AI Comment Suggestions
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ fontWeight: 600 }}>
+          💡 AI Comment Suggestions
+        </div>
+        <div>
+          <button
+            style={BUTTON_STYLE}
+            onClick={onRegenerate}
+            disabled={loading}
+            aria-label="Regenerate suggestions"
+          >
+            ⟲ Regenerate
+          </button>
+        </div>
       </div>
-      
+
       {loading && (
         <div style={loadingStyle}>
           <span>Generating suggestions...</span>
@@ -221,30 +240,36 @@ function copyToClipboard(text: string): void {
 }
 
 // Utility: Insert comment into LinkedIn's comment box
-function insertComment(text: string): void {
-  const textareaSelectors = [
-    'textarea',
-    '[contenteditable="true"]',
-    '[data-test-id="comment-input"]',
-    '.ql-editor'
-  ];
-  
-  const textarea = document.querySelector(textareaSelectors.join(', '));
-  if (textarea) {
-    if ('value' in textarea) {
-      (textarea as HTMLTextAreaElement).value = text;
-      (textarea as HTMLTextAreaElement).dispatchEvent(new Event('input', { bubbles: true }));
-    } else {
-      (textarea as HTMLElement).textContent = text;
-      textarea.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-    (textarea as HTMLElement).focus();
+function insertComment(text: string, postEl?: HTMLElement): void {
+  const root: ParentNode = postEl ?? document;
+
+  const textarea = root.querySelector<HTMLElement>([
+    '[data-test-live-comment-focus-target="true"] [contenteditable="true"]',
+    '[data-test-id="comment"] [contenteditable="true"]',
+    '.comments-comment-box__form [contenteditable="true"]',
+    '.comments-comment-texteditor [contenteditable="true"]',
+    '[contenteditable="true"]'
+  ].join(', '));
+
+  if (!textarea) {
+    // fallback: copy and prompt manual paste
+    navigator.clipboard.writeText(text);
+    alert("Copied. Click the comment box and paste (Ctrl/⌘+V).");
+    return;
+  }
+
+  textarea.focus();
+  // Try native insertion first
+  const ok = document.execCommand?.('insertText', false, text);
+  if (!ok) {
+    // fallback set textContent and dispatch input
+    textarea.textContent = text;
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
   }
 }
 
 // Main function to render the comment panel
 function renderPanel(post: HTMLElement, postText: string, author: string): void {
-  // Prevent duplicate panel
   if (post.querySelector('.linkedin-assistant-comment-panel')) return;
   
   const panelDiv = document.createElement('div');
@@ -255,17 +280,19 @@ function renderPanel(post: HTMLElement, postText: string, author: string): void 
     const [comments, setComments] = useState<CommentObj[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | undefined>(undefined);
-    
-    useEffect(() => {
-      // Skip if post is too short
+    const [attempt, setAttempt] = useState(0); // to trigger refetch
+
+    const fetchComments = () => {
+      setLoading(true);
+      setError(undefined);
+
       if (!postText || postText.length < 10) {
         setLoading(false);
         setComments([]);
         setError('Post too short for suggestions.');
         return;
       }
-      
-      // Fetch suggestions from backend
+
       fetch(BACKEND_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -273,25 +300,31 @@ function renderPanel(post: HTMLElement, postText: string, author: string): void 
       })
         .then(async (resp) => {
           if (!resp.ok) {
-            const errorData: ApiError = await resp.json();
+            const errorData: ApiError = await resp.json().catch(() => ({} as ApiError));
             throw new Error(errorData.detail || errorData.error || 'Backend error');
           }
           const data: ApiResponse = await resp.json();
-          setComments(data.comments || []);
+          setComments(Array.isArray(data.comments) ? data.comments : []);
         })
         .catch((e) => {
           setError(e.message || 'Failed to fetch suggestions.');
         })
         .finally(() => setLoading(false));
-    }, [postText, author]);
-    
+    };
+
+    useEffect(() => {
+      fetchComments();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [postText, author, attempt]);
+
     return (
       <CommentSuggestions
         comments={comments}
         loading={loading}
         error={error}
         onCopy={copyToClipboard}
-        onInsert={insertComment}
+        onInsert={(t) => insertComment(t, post)}
+        onRegenerate={() => setAttempt(a => a + 1)}
       />
     );
   }
@@ -304,6 +337,7 @@ function main(): void {
   if (!isPostPage()) return;
   
   const extracted = extractMainPost();
+  console.log("[LSA] extracted:", extracted ? { textLen: extracted.postText.length, author: extracted.author } : "none");
   if (!extracted) return;
   
   const { post, postText, author } = extracted;

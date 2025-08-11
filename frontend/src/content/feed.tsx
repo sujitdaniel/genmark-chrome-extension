@@ -20,7 +20,7 @@ interface ApiError {
 }
 
 // Configuration constants
-const BACKEND_URL = 'http://127.0.0.1:8000/classify-post';
+const BACKEND_URL = 'http://localhost:8000/classify-post';
 const OVERLAY_STYLE: React.CSSProperties = {
   position: 'absolute',
   right: '12px',
@@ -53,9 +53,10 @@ const errorStyle: React.CSSProperties = {
   border: '1px solid #fecaca',
 };
 
-// Utility: Check if on LinkedIn feed page
+// Utility: Check if on LinkedIn home feed page (exclude single posts)
 function isFeedPage(): boolean {
-  return /linkedin.com\/feed\//.test(window.location.href);
+  const p = location.pathname;
+  return p === "/feed/" || p === "/feed";
 }
 
 // Utility: Find all feed posts with robust selectors

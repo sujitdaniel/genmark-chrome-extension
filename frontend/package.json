@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:extension": "vite build && npm run copy-manifest",
+    "copy-manifest": "cp public/manifest.json dist/",
     "lint": "eslint .",
     "preview": "vite preview"
   },
